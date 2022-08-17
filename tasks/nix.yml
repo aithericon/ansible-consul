@@ -3,6 +3,7 @@
 # 'delegate_facts' is currently rather buggy in Ansible so this might not
 # always work. Hence 'consul_gather_server_facts' defaults to 'no'.
 - name: Gather facts from other servers
+  tags: configuration
   setup:
   delegate_to: "{{ host_item }}"
   delegate_facts: true
@@ -14,6 +15,7 @@
   when: consul_gather_server_facts | bool
 
 - name: Expose advertise_address(_wan) datacenter and node_role as facts
+  tags: configuration
   set_fact:
     consul_advertise_address_wan: "{{ consul_advertise_address_wan }}"
     consul_advertise_address: "{{ consul_advertise_address }}"
@@ -22,33 +24,39 @@
     consul_node_role: "{{ consul_node_role }}"
 
 - name: Read bootstrapped state
-  stat:
+  state:
     path: "{{ consul_bootstrap_state }}"
   register: bootstrap_state
   ignore_errors: true
-  tags: always
+  tags: configuration
 
 - name: Include user and group settings
   import_tasks: user_group.yml
+  tags: configuration, installation
 
 - name: Install OS packages and consul - from the repository
   include_tasks: install_linux_repo.yml
+  tags: installation
   when:
     - consul_install_from_repo | bool
 
 - name: Include directory settings
+  tags: installation
   import_tasks: dirs.yml
 
 - name: Check for existing Consul binary
+  tags: installation
   stat:
     path: "{{ consul_binary }}"
   register: consul_binary_installed
 
 - name: Calculate whether to install consul binary
+  tags: installation
   set_fact:
     consul_install_binary: "{{ consul_install_upgrade | bool or not consul_binary_installed.stat.exists }}"
 
 - name: Install OS packages and consul - locally
+  tags: installation
   include_tasks: install.yml
   when:
     - consul_install_binary | bool
@@ -56,6 +64,7 @@
     - not consul_install_from_repo | bool
 
 - name: Install OS packages and consul - remotely
+  tags: installation
   include_tasks: install_remote.yml
   when:
     - consul_install_binary | bool
@@ -67,17 +76,20 @@
 - block:
     - block:
         - name: Check for gossip encryption key on previously boostrapped server
+          tags: configuration
           slurp:
             src: "{{ consul_config_path }}/config.json"
           register: consul_config_b64
           ignore_errors: true
 
         - name: Deserialize existing configuration
+          tags: configuration
           set_fact:
             consul_config: "{{ consul_config_b64.content | b64decode | from_json }}"
           when: consul_config_b64.content is defined
 
         - name: Save gossip encryption key from existing configuration
+          tags: configuration
           set_fact:
             consul_raw_key: "{{ consul_config.encrypt }}"
           when: consul_config is defined
@@ -90,6 +102,7 @@
 
     # Key provided by extra vars or the above block
     - name: Write gossip encryption key locally for use with new servers
+      tags: configuration
       copy:
         content: "{{ consul_raw_key }}"
         dest: '/tmp/consul_raw.key'
@@ -105,10 +118,12 @@
     # Generate new key if none was found
     - block:
         - name: Generate gossip encryption key
+          tags: configuration
           shell: "PATH={{ consul_bin_path }}:$PATH consul keygen"
           register: consul_keygen
 
         - name: Write key locally to share with other nodes
+          tags: configuration
           copy:
             content: "{{ consul_keygen.stdout }}"
             dest: '/tmp/consul_raw.key'
@@ -125,6 +140,7 @@
         - not bootstrap_state.stat.exists | bool
 
     - name: Read gossip encryption key for servers that require it
+      tags: configuration
       set_fact:
         consul_raw_key: "{{ lookup('file', '/tmp/consul_raw.key') }}"
       no_log: true
@@ -132,6 +148,7 @@
         - consul_raw_key is not defined
 
     - name: Delete gossip encryption key file
+      tags: configuration
       file:
         path: '/tmp/consul_raw.key'
         state: absent
@@ -146,20 +163,25 @@
     - consul_encrypt_enable | bool
 
 - name: Create ACL configuration
+  tags: configuration
   include_tasks: acl.yml
   when: consul_acl_enable | bool
 
 - name: Create Consul configuration
+  tags: configuration
   import_tasks: config.yml
 
 - name: Create TLS configuration
+  tags: configuration
   include_tasks: tls.yml
   when: consul_tls_enable | bool
 
 - name: Create syslog configuration
+  tags: configuration
   import_tasks: syslog.yml
 
 - name: Create BSD init script
+  tags: configuration
   template:
     src: consul_bsdinit.j2
     dest: /etc/rc.d/consul
@@ -169,6 +191,7 @@
   when: ansible_os_family == "FreeBSD"
 
 - name: Create SYSV init script
+  tags: configuration
   template:
     src: consul_sysvinit.j2
     dest: /etc/init.d/consul
@@ -182,6 +205,7 @@
     - not ansible_os_family == "Solaris"
 
 - name: Create Debian init script
+  tags: installation
   template:
     src: consul_debianinit.j2
     dest: /etc/init.d/consul
@@ -195,6 +219,7 @@
     - not ansible_os_family == "Solaris"
 
 - name: Create systemd script
+  tags: installation
   template:
     src: consul_systemd.service.j2
     dest: "{{ consul_systemd_unit_path }}/consul.service"
@@ -215,6 +240,7 @@
   when: systemd_unit is changed
 
 - name: Enable consul at startup (systemd)
+  tags: installation
   systemd:
     name: consul
     enabled: yes
@@ -284,7 +310,9 @@
     - include_tasks: ../tasks/iptables.yml
       when: consul_iptables_enable | bool
 
+  tags: configuration
   when: not bootstrap_state.stat.exists
 
 - include_tasks: ../tasks/dnsmasq.yml
   when: consul_dnsmasq_enable | bool
+  tags: configuration
