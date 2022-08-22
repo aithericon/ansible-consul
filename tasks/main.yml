@@ -22,6 +22,7 @@
         ansible_become: false
       run_once: true
       when: not is_virtualenv or is_virtualenv == None
+      tags: installation
 
     - name: Install netaddr dependency on controlling host (virtualenv)
       pip:
@@ -31,10 +32,12 @@
       vars:
         ansible_become: false
       run_once: true
+      tags: installation
       when: is_virtualenv is defined
 
 - name: Include checks/asserts
   import_tasks: asserts.yml
+  tags: installation
 
 - name: Include OS-specific variables
   include_vars: "{{ vars_file_item }}"
