@@ -24,7 +24,7 @@
     consul_node_role: "{{ consul_node_role }}"
 
 - name: Read bootstrapped state
-  state:
+  stat:
     path: "{{ consul_bootstrap_state }}"
   register: bootstrap_state
   ignore_errors: true
