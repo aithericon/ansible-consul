@@ -52,6 +52,7 @@
 - name: Include NIX tasks
   include_tasks: nix.yml
   when: ansible_os_family != 'Windows'
+  tags: installation
 
 # -----------------------------------------------------------------------
 # Tasks for Windows
